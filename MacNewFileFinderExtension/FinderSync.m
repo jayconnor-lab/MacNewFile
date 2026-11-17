@@ -7,7 +7,7 @@
 
 #import "FinderSync.h"
 
-static NSString * const kAppGroupIdentifier = @"group.com.louieyin.MacNewFile";
+static NSString * const kAppGroupIdentifier = @"group.com.jayconnor.MacNewFile";
 
 // Feature keys for UserDefaults
 static NSString * const kFeatureCopyPath = @"feature_copy_path";
