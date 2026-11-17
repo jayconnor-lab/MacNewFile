@@ -132,8 +132,8 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
     copyPathCheckbox.frame = NSMakeRect(leftX, currentY, columnWidth, checkboxHeight);
     id copyPathValue = [self.sharedDefaults objectForKey:kFeatureCopyPath];
     if (copyPathValue == nil) {
-        copyPathCheckbox.state = NSControlStateValueOn;
-        [self.sharedDefaults setBool:YES forKey:kFeatureCopyPath];
+        copyPathCheckbox.state = NSControlStateValueOff;
+        [self.sharedDefaults setBool:NO forKey:kFeatureCopyPath];
     } else {
         copyPathCheckbox.state = [self.sharedDefaults boolForKey:kFeatureCopyPath] ? NSControlStateValueOn : NSControlStateValueOff;
     }
@@ -145,8 +145,8 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
     openTerminalCheckbox.frame = NSMakeRect(rightX, currentY, columnWidth, checkboxHeight);
     id openTerminalValue = [self.sharedDefaults objectForKey:kFeatureOpenTerminal];
     if (openTerminalValue == nil) {
-        openTerminalCheckbox.state = NSControlStateValueOn;
-        [self.sharedDefaults setBool:YES forKey:kFeatureOpenTerminal];
+        openTerminalCheckbox.state = NSControlStateValueOff;
+        [self.sharedDefaults setBool:NO forKey:kFeatureOpenTerminal];
     } else {
         openTerminalCheckbox.state = [self.sharedDefaults boolForKey:kFeatureOpenTerminal] ? NSControlStateValueOn : NSControlStateValueOff;
     }
@@ -189,11 +189,12 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
 
         checkbox.frame = NSMakeRect(xPos, yPos, columnWidth, checkboxHeight);
 
-        // Load saved state (default to ON if not set)
+        // Load saved state (default: only Text and Markdown enabled)
+        BOOL defaultEnabled = [key isEqualToString:kFeatureTextFile] || [key isEqualToString:kFeatureMarkdownFile];
         id savedValue = [self.sharedDefaults objectForKey:key];
         if (savedValue == nil) {
-            checkbox.state = NSControlStateValueOn;
-            [self.sharedDefaults setBool:YES forKey:key];
+            checkbox.state = defaultEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+            [self.sharedDefaults setBool:defaultEnabled forKey:key];
         } else {
             checkbox.state = [self.sharedDefaults boolForKey:key] ? NSControlStateValueOn : NSControlStateValueOff;
         }

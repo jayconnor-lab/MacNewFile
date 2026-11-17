@@ -41,10 +41,10 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
 }
 
 - (BOOL)isFeatureEnabled:(NSString *)key {
-    // Default to YES if not set
+    // Default: only New Text File and New Markdown File are enabled
     id value = [self.sharedDefaults objectForKey:key];
     if (value == nil) {
-        return YES;
+        return [key isEqualToString:kFeatureTextFile] || [key isEqualToString:kFeatureMarkdownFile];
     }
     return [self.sharedDefaults boolForKey:key];
 }
