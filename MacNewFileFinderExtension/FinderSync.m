@@ -6,6 +6,7 @@
 //
 
 #import "FinderSync.h"
+#import <ApplicationServices/ApplicationServices.h>
 
 static NSString * const kAppGroupIdentifier = @"group.com.jayconnor.MacNewFile";
 
@@ -23,6 +24,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
 
 @interface FinderSync ()
 @property (strong) NSUserDefaults *sharedDefaults;
+- (void)revealAndBeginRenameAtPath:(NSString *)filePath;
 @end
 
 @implementation FinderSync
@@ -47,6 +49,43 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         return [key isEqualToString:kFeatureTextFile] || [key isEqualToString:kFeatureMarkdownFile];
     }
     return [self.sharedDefaults boolForKey:key];
+}
+
+// Reveals a newly created file in Finder and starts inline rename on it.
+// Finder Sync has no rename API, so this selects the item and presses Return
+// in Finder via System Events. That keystroke needs Accessibility permission.
+- (void)revealAndBeginRenameAtPath:(NSString *)filePath {
+    static BOOL didPromptForAccessibility = NO;
+
+    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+
+    if (!AXIsProcessTrusted() && !didPromptForAccessibility) {
+        didPromptForAccessibility = YES;
+        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
+        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+    }
+
+    NSString *escapedPath = [filePath stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+    escapedPath = [escapedPath stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+
+    NSString *scriptSource = [NSString stringWithFormat:
+        @"set targetFile to (POSIX file \"%@\") as alias\n"
+         "tell application \"Finder\"\n"
+         "    activate\n"
+         "    reveal targetFile\n"
+         "    select targetFile\n"
+         "end tell\n"
+         "delay 0.4\n"
+         "tell application \"System Events\" to key code 36\n", escapedPath];
+
+    NSAppleScript *script = [[NSAppleScript alloc] initWithSource:scriptSource];
+    NSDictionary *errorDict = nil;
+    [script executeAndReturnError:&errorDict];
+
+    if (errorDict) {
+        NSLog(@"Created file, but could not start rename: %@", errorDict);
+    }
 }
 
 #pragma mark - Primary Finder Sync protocol methods
@@ -284,8 +323,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create Word document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -339,8 +377,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create Excel document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -392,8 +429,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create PowerPoint document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -444,8 +480,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create Pages document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -496,8 +531,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create Numbers document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -548,8 +582,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed to create Keynote document: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
@@ -599,8 +632,7 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
         NSLog(@"Failed: %@", errorDict);
     } else {
         NSLog(@"Created: %@", filePath);
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+        [self revealAndBeginRenameAtPath:filePath];
     }
 }
 
