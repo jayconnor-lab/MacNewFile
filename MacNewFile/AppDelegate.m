@@ -7,8 +7,35 @@
 
 #import "AppDelegate.h"
 #import <ServiceManagement/ServiceManagement.h>
+#import <ApplicationServices/ApplicationServices.h>
 
 static NSString * const kAppGroupIdentifier = @"group.com.jayconnor.MacNewFile";
+static NSString * const kRenameNotificationName = @"com.jayconnor.MacNewFile.StartRename";
+
+static void MNFRenameLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+
+    NSURL *containerURL = [[NSFileManager defaultManager]
+        containerURLForSecurityApplicationGroupIdentifier:kAppGroupIdentifier];
+    if (!containerURL) {
+        return;
+    }
+
+    NSString *logPath = [[containerURL URLByAppendingPathComponent:@"rename-debug.log"] path];
+    NSString *line = [NSString stringWithFormat:@"[app] %@ %@\n", [NSDate date], message];
+
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:logPath];
+    if (!handle) {
+        [[NSData data] writeToFile:logPath atomically:NO];
+        handle = [NSFileHandle fileHandleForWritingAtPath:logPath];
+    }
+    [handle seekToEndOfFile];
+    [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+    [handle closeFile];
+}
 
 // Feature keys for UserDefaults
 static NSString * const kFeatureCopyPath = @"feature_copy_path";
@@ -26,12 +53,18 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
 @property (strong) NSStatusItem *statusItem;
 @property (strong) NSWindow *settingsWindow;
 @property (strong) NSUserDefaults *sharedDefaults;
-
+- (void)sendReturnToFinder;
 @end
 
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    // Listen for rename requests from the Finder extension
+    [[NSDistributedNotificationCenter defaultCenter] addObserver:self
+                                                       selector:@selector(handleRenameRequest:)
+                                                           name:kRenameNotificationName
+                                                         object:nil];
+
     // Enable the Finder extension
     [self setExtensionEnabled:YES];
 
@@ -73,6 +106,60 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
     // Disable the Finder extension when app quits
     [self setExtensionEnabled:NO];
+}
+
+// The Finder extension cannot drive Finder's UI, so it hands the
+// "start inline rename" step to this app. This app posts a Return key event
+// to Finder, which puts the selected item into inline rename mode.
+- (void)handleRenameRequest:(NSNotification *)notification {
+    NSString *filePath = notification.object;
+    if (![filePath isKindOfClass:[NSString class]] || filePath.length == 0) {
+        return;
+    }
+
+    MNFRenameLog(@"Got rename request for %@", filePath);
+
+    if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+        MNFRenameLog(@"File does not exist: %@", filePath);
+        return;
+    }
+
+    if (!AXIsProcessTrusted()) {
+        MNFRenameLog(@"Accessibility not granted; prompting");
+        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
+        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+        return;
+    }
+
+    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:filePath]]];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSRunningApplication *finder = [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.finder"].firstObject;
+        [finder activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self sendReturnToFinder];
+        });
+    });
+}
+
+- (void)sendReturnToFinder {
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+    CGEventRef keyDown = CGEventCreateKeyboardEvent(source, (CGKeyCode)36, true);
+    CGEventRef keyUp = CGEventCreateKeyboardEvent(source, (CGKeyCode)36, false);
+
+    if (keyDown) {
+        CGEventPost(kCGHIDEventTap, keyDown);
+    }
+    if (keyUp) {
+        CGEventPost(kCGHIDEventTap, keyUp);
+    }
+
+    if (keyDown) CFRelease(keyDown);
+    if (keyUp) CFRelease(keyUp);
+    if (source) CFRelease(source);
+
+    MNFRenameLog(@"Posted Return to Finder");
 }
 
 - (void)openSettings:(id)sender {

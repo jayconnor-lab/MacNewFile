@@ -6,9 +6,34 @@
 //
 
 #import "FinderSync.h"
-#import <ApplicationServices/ApplicationServices.h>
 
 static NSString * const kAppGroupIdentifier = @"group.com.jayconnor.MacNewFile";
+static NSString * const kRenameNotificationName = @"com.jayconnor.MacNewFile.StartRename";
+
+static void MNFRenameLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+
+    NSURL *containerURL = [[NSFileManager defaultManager]
+        containerURLForSecurityApplicationGroupIdentifier:kAppGroupIdentifier];
+    if (!containerURL) {
+        return;
+    }
+
+    NSString *logPath = [[containerURL URLByAppendingPathComponent:@"rename-debug.log"] path];
+    NSString *line = [NSString stringWithFormat:@"[ext] %@ %@\n", [NSDate date], message];
+
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:logPath];
+    if (!handle) {
+        [[NSData data] writeToFile:logPath atomically:NO];
+        handle = [NSFileHandle fileHandleForWritingAtPath:logPath];
+    }
+    [handle seekToEndOfFile];
+    [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+    [handle closeFile];
+}
 
 // Feature keys for UserDefaults
 static NSString * const kFeatureCopyPath = @"feature_copy_path";
@@ -51,41 +76,20 @@ static NSString * const kFeatureOpenTerminal = @"feature_open_terminal";
     return [self.sharedDefaults boolForKey:key];
 }
 
-// Reveals a newly created file in Finder and starts inline rename on it.
-// Finder Sync has no rename API, so this selects the item and presses Return
-// in Finder via System Events. That keystroke needs Accessibility permission.
+// Reveals a newly created file in Finder and asks the main app to start
+// inline rename on it. Finder Sync cannot drive Finder's UI itself, and the
+// main app can be granted the Accessibility permission that needs.
 - (void)revealAndBeginRenameAtPath:(NSString *)filePath {
-    static BOOL didPromptForAccessibility = NO;
-
     NSURL *fileURL = [NSURL fileURLWithPath:filePath];
     [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
 
-    if (!AXIsProcessTrusted() && !didPromptForAccessibility) {
-        didPromptForAccessibility = YES;
-        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
-        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
-    }
+    MNFRenameLog(@"Created %@; requesting rename", filePath);
 
-    NSString *escapedPath = [filePath stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
-    escapedPath = [escapedPath stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
-
-    NSString *scriptSource = [NSString stringWithFormat:
-        @"set targetFile to (POSIX file \"%@\") as alias\n"
-         "tell application \"Finder\"\n"
-         "    activate\n"
-         "    reveal targetFile\n"
-         "    select targetFile\n"
-         "end tell\n"
-         "delay 0.4\n"
-         "tell application \"System Events\" to key code 36\n", escapedPath];
-
-    NSAppleScript *script = [[NSAppleScript alloc] initWithSource:scriptSource];
-    NSDictionary *errorDict = nil;
-    [script executeAndReturnError:&errorDict];
-
-    if (errorDict) {
-        NSLog(@"Created file, but could not start rename: %@", errorDict);
-    }
+    [[NSDistributedNotificationCenter defaultCenter]
+        postNotificationName:kRenameNotificationName
+                      object:filePath
+                    userInfo:nil
+          deliverImmediately:YES];
 }
 
 #pragma mark - Primary Finder Sync protocol methods
